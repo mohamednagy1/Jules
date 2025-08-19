@@ -1,0 +1,934 @@
+{
+  "name": "Multi-Agent Workflow with Committee Evaluation",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          {
+            "operation": "set",
+            "key": "phase",
+            "value": "research"
+          },
+          {
+            "operation": "set",
+            "key": "round",
+            "value": 1
+          },
+          {
+            "operation": "set",
+            "key": "maxRounds",
+            "value": 4
+          },
+          {
+            "operation": "set",
+            "key": "documents",
+            "value": "{}"
+          },
+          {
+            "operation": "set",
+            "key": "refinementHistory",
+            "value": "[]"
+          },
+          {
+            "operation": "set",
+            "key": "consensusScores",
+            "value": "[]"
+          },
+          {
+            "operation": "set",
+            "key": "userInput",
+            "value": "={{ $json.userInput || $json.message || 'Default research request' }}"
+          },
+          {
+            "operation": "set",
+            "key": "agentPerformance",
+            "value": "{}"
+          }
+        ]
+      },
+      "id": "initialize-state",
+      "name": "Initialize State",
+      "type": "set",
+      "typeVersion": 3.4,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "research",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "research",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "analysis",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "analysis",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "plan",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "plan",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "phase-router",
+      "name": "Phase Router",
+      "type": "if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate research prompt based on current state\nconst phase = $input.first().json.phase;\nconst round = $input.first().json.round;\nconst userInput = $input.first().json.userInput;\nconst refinementHistory = $input.first().json.refinementHistory || [];\n\nlet prompt = `Research Phase - Round ${round}\\n\\n`;\nprompt += `User Request: ${userInput}\\n\\n`;\n\nif (round > 1 && refinementHistory.length > 0) {\n  prompt += `Previous feedback:\\n${refinementHistory.join('\\n')}\\n\\n`;\n  prompt += `Please address the following points:\\n`;\n  refinementHistory.forEach((item, index) => {\n    prompt += `${index + 1}. ${item}\\n`;\n  });\n  prompt += `\\n`;\n}\n\nprompt += `Instructions:\\n`;\nprompt += `1. Conduct comprehensive research on the topic\\n`;\nprompt += `2. Use reliable sources and cite them\\n`;\nprompt += `3. Provide structured findings\\n`;\nprompt += `4. Focus on accuracy and relevance\\n`;\nprompt += `5. Return response in JSON format with sections: summary, findings, sources, recommendations`;\n\nreturn {\n  prompt,\n  phase,\n  round,\n  userInput\n};"
+      },
+      "id": "generate-research-prompt",
+      "name": "Generate Research Prompt",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate analysis prompt based on research document\nconst phase = $input.first().json.phase;\nconst round = $input.first().json.round;\nconst researchDoc = $input.first().json.documents?.research || {};\nconst refinementHistory = $input.first().json.refinementHistory || [];\n\nlet prompt = `Analysis Phase - Round ${round}\\n\\n`;\nprompt += `Research Document:\\n${JSON.stringify(researchDoc, null, 2)}\\n\\n`;\n\nif (round > 1 && refinementHistory.length > 0) {\n  prompt += `Previous feedback:\\n${refinementHistory.join('\\n')}\\n\\n`;\n  prompt += `Please address the following points:\\n`;\n  refinementHistory.forEach((item, index) => {\n    prompt += `${index + 1}. ${item}\\n`;\n  });\n  prompt += `\\n`;\n}\n\nprompt += `Instructions:\\n`;\nprompt += `1. Analyze the research findings critically\\n`;\nprompt += `2. Identify vulnerabilities and opportunities\\n`;\nprompt += `3. Assess risks and potential impacts\\n`;\nprompt += `4. Provide structured analysis\\n`;\nprompt += `5. Return response in JSON format with sections: analysis, vulnerabilities, opportunities, risks, recommendations`;\n\nreturn {\n  prompt,\n  phase,\n  round,\n  researchDoc\n};"
+      },
+      "id": "generate-analysis-prompt",
+      "name": "Generate Analysis Prompt",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate planning prompt based on research and analysis\nconst phase = $input.first().json.phase;\nconst round = $input.first().json.round;\nconst researchDoc = $input.first().json.documents?.research || {};\nconst analysisDoc = $input.first().json.documents?.analysis || {};\nconst refinementHistory = $input.first().json.refinementHistory || [];\n\nlet prompt = `Plan Phase - Round ${round}\\n\\n`;\nprompt += `Research Document:\\n${JSON.stringify(researchDoc, null, 2)}\\n\\n`;\nprompt += `Analysis Document:\\n${JSON.stringify(analysisDoc, null, 2)}\\n\\n`;\n\nif (round > 1 && refinementHistory.length > 0) {\n  prompt += `Previous feedback:\\n${refinementHistory.join('\\n')}\\n\\n`;\n  prompt += `Please address the following points:\\n`;\n  refinementHistory.forEach((item, index) => {\n    prompt += `${index + 1}. ${item}\\n`;\n  });\n  prompt += `\\n`;\n}\n\nprompt += `Instructions:\\n`;\nprompt += `1. Create actionable implementation plan\\n`;\nprompt += `2. Use insights from research and analysis\\n`;\nprompt += `3. Define clear steps and timelines\\n`;\nprompt += `4. Identify resources and dependencies\\n`;\nprompt += `5. Return response in JSON format with sections: plan, steps, timeline, resources, success_metrics`;\n\nreturn {\n  prompt,\n  phase,\n  round,\n  researchDoc,\n  analysisDoc\n};"
+      },
+      "id": "generate-plan-prompt",
+      "name": "Generate Plan Prompt",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "qwen2.5-72b-instruct"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "temperature",
+              "value": 0.7
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "qwen3-coder",
+      "name": "Qwen3 Coder",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "mistral-small-latest"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 3000
+            },
+            {
+              "name": "temperature",
+              "value": 0.6
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "mistral-small",
+      "name": "Mistral Small 3.2",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "deepseek-chat"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "temperature",
+              "value": 0.5
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "deepseek-r1",
+      "name": "DeepSeek R1",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "temperature",
+              "value": 0.6
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "nvidia-nemotron",
+      "name": "NVIDIA Nemotron",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o-mini"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 3000
+            },
+            {
+              "name": "temperature",
+              "value": 0.7
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "meta-llama",
+      "name": "Meta Llama 3.3",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "temperature",
+              "value": 0.8
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "moonshot-kimi",
+      "name": "Moonshot Kimi",
+      "type": "httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all agent responses\nconst responses = [];\nconst errors = [];\n\n// Collect successful responses\n$input.all().forEach((item, index) => {\n  if (item.json && item.json.choices && item.json.choices[0]) {\n    responses.push({\n      agent: item.json.agent || `Agent_${index}`,\n      content: item.json.choices[0].message.content,\n      timestamp: new Date().toISOString()\n    });\n  } else if (item.error) {\n    errors.push({\n      agent: item.json.agent || `Agent_${index}`,\n      error: item.error.message || 'Unknown error'\n    });\n  }\n});\n\n// Prepare committee package\nconst committeePackage = {\n  phase: $input.first().json.phase,\n  round: $input.first().json.round,\n  responses,\n  errors,\n  totalAgents: 6,\n  successfulResponses: responses.length,\n  timestamp: new Date().toISOString()\n};\n\nreturn {\n  committeePackage,\n  responses,\n  errors,\n  phase: $input.first().json.phase,\n  round: $input.first().json.round\n};"
+      },
+      "id": "merge-responses",
+      "name": "Merge Responses",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1120, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Committee evaluation using DeepSeek R1T2 Chimera\nconst committeePackage = $input.first().json.committeePackage;\nconst responses = $input.first().json.responses;\n\n// Create evaluation prompt\nlet evaluationPrompt = `Committee Evaluation - ${committeePackage.phase.toUpperCase()} Phase\\n\\n`;\nevaluationPrompt += `Round: ${committeePackage.round}\\n`;\nevaluationPrompt += `Total Responses: ${committeePackage.totalAgents}\\n`;\nevaluationPrompt += `Successful Responses: ${committeePackage.successfulResponses}\\n\\n`;\n\nevaluationPrompt += `Agent Responses:\\n`;\nresponses.forEach((response, index) => {\n  evaluationPrompt += `\\nAgent ${index + 1} (${response.agent}):\\n${response.content}\\n`;\n});\n\nevaluationPrompt += `\\n\\nEvaluation Instructions:\\n`;\nevaluationPrompt += `1. Analyze the quality and consistency of responses\\n`;\nevaluationPrompt += `2. Calculate consensus score (0-100%)\\n`;\nevaluationPrompt += `3. Identify key divergence points\\n`;\nevaluationPrompt += `4. Provide specific recommendations for improvement\\n`;\nevaluationPrompt += `5. Return JSON with: consensus_score, divergence_points, recommendations, quality_assessment`;\n\nreturn {\n  evaluationPrompt,\n  committeePackage,\n  phase: committeePackage.phase,\n  round: committeePackage.round\n};"
+      },
+      "id": "prepare-committee-package",
+      "name": "Prep Committee Package",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1340, 350]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.evaluationPrompt }\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "temperature",
+              "value": 0.3
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "committee-evaluation",
+      "name": "Committee Evaluation",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1560, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse committee evaluation and check consensus\nconst evaluation = $input.first().json;\nlet consensusScore = 0;\nlet divergencePoints = [];\nlet recommendations = [];\n\n// Try to parse the evaluation response\nif (evaluation.choices && evaluation.choices[0]) {\n  try {\n    const content = evaluation.choices[0].message.content;\n    const parsed = JSON.parse(content);\n    consensusScore = parsed.consensus_score || 0;\n    divergencePoints = parsed.divergence_points || [];\n    recommendations = parsed.recommendations || [];\n  } catch (e) {\n    // Fallback parsing\n    const content = evaluation.choices[0].message.content;\n    const scoreMatch = content.match(/consensus_score[\\s:]*([0-9]+)/i);\n    if (scoreMatch) consensusScore = parseInt(scoreMatch[1]);\n  }\n}\n\nconst hasConsensus = consensusScore >= 85;\nconst canRetry = $input.first().json.round < $input.first().json.maxRounds;\n\nreturn {\n  consensusScore,\n  divergencePoints,\n  recommendations,\n  hasConsensus,\n  canRetry,\n  phase: $input.first().json.phase,\n  round: $input.first().json.round,\n  maxRounds: $input.first().json.maxRounds\n};"
+      },
+      "id": "check-consensus",
+      "name": "Check Consensus",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1780, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Synthesize final document based on consensus\nconst responses = $input.first().json.responses;\nconst consensusScore = $input.first().json.consensusScore;\nconst phase = $input.first().json.phase;\n\n// Create synthesis prompt\nlet synthesisPrompt = `Synthesize ${phase.toUpperCase()} Document\\n\\n`;\nsynthesisPrompt += `Consensus Score: ${consensusScore}%\\n`;\nsynthesisPrompt += `Number of Responses: ${responses.length}\\n\\n`;\n\nsynthesisPrompt += `Agent Responses:\\n`;\nresponses.forEach((response, index) => {\n  synthesisPrompt += `\\nAgent ${index + 1}:\\n${response.content}\\n`;\n});\n\nsynthesisPrompt += `\\n\\nInstructions:\\n`;\nsynthesisPrompt += `1. Create a comprehensive, well-structured document\\n`;\nsynthesisPrompt += `2. Resolve any contradictions between responses\\n`;\nsynthesisPrompt += `3. Highlight areas of strong consensus\\n`;\nsynthesisPrompt += `4. Provide clear, actionable insights\\n`;\nsynthesisPrompt += `5. Return a professional, publication-ready document`;\n\nreturn {\n  synthesisPrompt,\n  phase,\n  consensusScore,\n  responses\n};"
+      },
+      "id": "synthesize-document",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2000, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store responses and increment round for retry\nconst currentState = $input.first().json;\nconst responses = currentState.responses;\nconst round = currentState.round;\nconst phase = currentState.phase;\n\n// Store current responses in refinement history\nconst refinementHistory = currentState.refinementHistory || [];\nrefinementHistory.push({\n  round,\n  phase,\n  responses,\n  timestamp: new Date().toISOString()\n});\n\n// Increment round\nconst newRound = round + 1;\n\n// Update state for retry\nconst updatedState = {\n  ...currentState,\n  round: newRound,\n  refinementHistory,\n  lastRefinement: {\n    round,\n    phase,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn updatedState;"
+      },
+      "id": "store-responses-retry",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2000, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Finalize best available document when max rounds reached\nconst currentState = $input.first().json;\nconst responses = currentState.responses;\nconst phase = currentState.phase;\nconst round = currentState.round;\n\n// Create finalization prompt\nlet finalizationPrompt = `Finalize ${phase.toUpperCase()} Document (Max Rounds Reached)\\n\\n`;\nfinalizationPrompt += `Round: ${round}\\n`;\nfinalizationPrompt += `Number of Responses: ${responses.length}\\n\\n`;\n\nfinalizationPrompt += `Available Responses:\\n`;\nresponses.forEach((response, index) => {\n  finalizationPrompt += `\\nAgent ${index + 1}:\\n${response.content}\\n`;\n});\n\nfinalizationPrompt += `\\n\\nInstructions:\\n`;\nfinalizationPrompt += `1. Create the best possible document from available responses\\n`;\nfinalizationPrompt += `2. Acknowledge limitations due to max rounds\\n`;\nfinalizationPrompt += `3. Highlight areas of agreement\\n`;\nfinalizationPrompt += `4. Note areas requiring further investigation\\n`;\nfinalizationPrompt += `5. Return a professional document with caveats`;\n\nreturn {\n  finalizationPrompt,\n  phase,\n  round,\n  responses,\n  maxRoundsReached: true\n};"
+      },
+      "id": "finalize-best-document",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2000, 650]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Phase transition logic\nconst currentPhase = $input.first().json.phase;\nconst nextPhase = {\n  'research': 'analysis',\n  'analysis': 'plan',\n  'plan': 'complete'\n}[currentPhase];\n\nif (nextPhase === 'complete') {\n  return {\n    action: 'complete',\n    message: 'All phases completed successfully',\n    finalDocuments: $input.first().json.documents\n  };\n} else {\n  // Update state for next phase\n  const updatedState = {\n    ...$input.first().json,\n    phase: nextPhase,\n    round: 1,\n    refinementHistory: []\n  };\n  \n  return {\n    action: 'transition',\n    nextPhase,\n    updatedState\n  };\n}"
+      },
+      "id": "phase-transition",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2220, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate final comprehensive report\nconst researchDoc = $input.first().json.documents?.research || {};\nconst analysisDoc = $input.first().json.documents?.analysis || {};\nconst planDoc = $input.first().json.documents?.plan || {};\n\nconst finalReport = {\n  executive_summary: {\n    research_highlights: researchDoc.summary || 'Research summary not available',\n    key_insights: analysisDoc.insights || 'Analysis insights not available',\n    action_items: planDoc.action_items || 'Action items not available'\n  },\n  detailed_findings: {\n    research: researchDoc,\n    analysis: analysisDoc,\n    plan: planDoc\n  },\n  recommendations: {\n    immediate: planDoc.immediate_actions || [],\n    short_term: planDoc.short_term_goals || [],\n    long_term: planDoc.long_term_strategy || []\n  },\n  metadata: {\n    generated_at: new Date().toISOString(),\n    total_phases: 3,\n    consensus_scores: $input.first().json.consensusScores || [],\n    refinement_rounds: $input.first().json.refinementHistory?.length || 0\n  }\n};\n\nreturn {\n  finalReport,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "generate-final-report",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2440, 250]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "🚀 Multi-Agent Workflow Complete!\\n\\n📊 Final Report Generated\\n📅 {{ $json.timestamp }}\\n\\nThe comprehensive analysis and planning document has been completed and stored. Check your Google Drive for the full report.\\n\\nKey Highlights:\\n- Research Phase: ✅\\n- Analysis Phase: ✅\\n- Planning Phase: ✅\\n\\nTotal Refinement Rounds: {{ $json.finalReport.metadata.refinement_rounds }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        }
+      },
+      "id": "telegram-notification",
+      "name": "Telegram Notification",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2660, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error handling and fallback\nconst error = $input.first().error || 'Unknown error occurred';\nconst phase = $input.first().json?.phase || 'unknown';\nconst round = $input.first().json?.round || 1;\n\n// Log error\nconsole.error(`Error in ${phase} phase, round ${round}:`, error);\n\n// Determine fallback action\nlet fallbackAction = 'retry';\nlet fallbackMessage = `Error in ${phase} phase, round ${round}. Attempting retry.`;\n\nif (round >= 4) {\n  fallbackAction = 'finalize';\n  fallbackMessage = `Max rounds reached in ${phase} phase. Finalizing with available data.`;\n}\n\nreturn {\n  error,\n  phase,\n  round,\n  fallbackAction,\n  fallbackMessage,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1780, 600]
+    }
+  ],
+  "connections": {
+    "Initialize State": {
+      "main": [
+        [
+          {
+            "node": "Phase Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phase Router": {
+      "main": [
+        [
+          {
+            "node": "Generate Research Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Analysis Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Plan Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Research Prompt": {
+      "main": [
+        [
+          {
+            "node": "Qwen3 Coder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mistral Small 3.2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DeepSeek R1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NVIDIA Nemotron",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Meta Llama 3.3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Moonshot Kimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Analysis Prompt": {
+      "main": [
+        [
+          {
+            "node": "Qwen3 Coder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mistral Small 3.2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DeepSeek R1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NVIDIA Nemotron",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Meta Llama 3.3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Moonshot Kimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Plan Prompt": {
+      "main": [
+        [
+          {
+            "node": "Qwen3 Coder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mistral Small 3.2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mistral Small 3.2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DeepSeek R1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NVIDIA Nemotron",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Meta Llama 3.3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mooshot Kimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qwen3 Coder": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral Small 3.2": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DeepSeek R1": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "NVIDIA Nemotron": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Meta Llama 3.3": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Moonshot Kimi": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Merge Responses": {
+      "main": [
+        [
+          {
+            "node": "Prep Committee Package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Committee Package": {
+      "main": [
+        [
+          {
+            "node": "Committee Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Committee Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Check Consensus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Consensus": {
+      "main": [
+        [
+          {
+            "node": "Synthesize Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Responses Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Best Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthesize Document": {
+      "main": [
+        [
+          {
+            "node": "Phase Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Responses Retry": {
+      "main": [
+        [
+          {
+            "node": "Phase Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Best Document": {
+      "main": [
+        [
+          {
+            "node": "Phase Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phase Transition": {
+      "main": [
+        [
+          {
+            "node": "Generate Final Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Phase Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Final Report": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "multi-agent-workflow",
+      "name": "Multi-Agent Workflow"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
