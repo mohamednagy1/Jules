@@ -10,76 +10,67 @@
       },
       "id": "webhook",
       "name": "Webhook (Input)",
-      "type": "webhook",
+      "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
       "position": [80, 300],
       "webhookId": "multi-agent-v3"
     },
     {
       "parameters": {
-        "jsCode": "// Initialize or resume durable state\nconst input = $input.first().json || {};\nconst userInput = input.message || input.userInput || input.query || 'Default research request';\nif (!userInput || userInput.trim().length < 10) {\n  throw new Error('User input must be at least 10 characters');\n}\n\nconst maxRounds = Number(input.maxRounds || 4);\nconst consensusThreshold = Number(input.consensusThreshold || 85);\n\n// Global durable store for failure counters (across runs)\nconst globalStore = this.getWorkflowStaticData('global');\nif (!globalStore.agentFailures) globalStore.agentFailures = {};\n\nconst state = {\n  workflowId: globalStore.workflowId || `wf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-  phase: input.phase || 'research',\n  round: Number(input.round || 1),\n  maxRounds,\n  consensusThreshold,\n  priority: input.priority || 'normal',\n  documents: input.documents || { research: null, analysis: null, plan: null },\n  refinementHistory: input.refinementHistory || [],\n  consensusScores: input.consensusScores || [],\n  userInput,\n  agentPerformance: input.agentPerformance || { active: ['qwen','mistral','deepseek','nemotron','llama','kimi'], failed: [], timeout: [], scores: {} },\n  createdAt: globalStore.createdAt || new Date().toISOString(),\n  updatedAt: new Date().toISOString()\n};\n\n// persist ids\nglobalStore.workflowId = state.workflowId;\nif (!globalStore.createdAt) globalStore.createdAt = state.createdAt;\n\nreturn state;"
+        "jsCode": "// Initialize or resume durable state\nconst input = $input.first().json || {};\nconst userInput = input.message || input.userInput || input.query || 'Default research request';\nif (!userInput || userInput.trim().length < 10) {\n  throw new Error('User input must be at least 10 characters');\n}\n\nconst maxRounds = Number(input.maxRounds || 4);\nconst consensusThreshold = Number(input.consensusThreshold || 85);\n\nconst globalStore = this.getWorkflowStaticData('global');\nif (!globalStore.agentFailures) globalStore.agentFailures = {};\n\nconst state = {\n  workflowId: globalStore.workflowId || `wf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+  phase: input.phase || 'research',\n  round: Number(input.round || 1),\n  maxRounds,\n  consensusThreshold,\n  priority: input.priority || 'normal',\n  documents: input.documents || { research: null, analysis: null, plan: null },\n  refinementHistory: input.refinementHistory || [],\n  consensusScores: input.consensusScores || [],\n  userInput,\n  agentPerformance: input.agentPerformance || { active: ['qwen','mistral','deepseek','nemotron','llama','kimi'], failed: [], timeout: [], scores: {} },\n  createdAt: globalStore.createdAt || new Date().toISOString(),\n  updatedAt: new Date().toISOString()\n};\n\nglobalStore.workflowId = state.workflowId;\nif (!globalStore.createdAt) globalStore.createdAt = state.createdAt;\n\nreturn state;"
       },
       "id": "init",
       "name": "Init Durable State",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [300, 300]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
+          "string": [
             {
-              "id": "research",
-              "leftValue": "={{ $json.phase }}",
-              "rightValue": "research",
-              "operator": { "type": "string", "operation": "equals" }
+              "value1": "={{ $json.phase }}",
+              "operation": "equal",
+              "value2": "research"
             },
             {
-              "id": "analysis",
-              "leftValue": "={{ $json.phase }}",
-              "rightValue": "analysis",
-              "operator": { "type": "string", "operation": "equals" }
+              "value1": "={{ $json.phase }}",
+              "operation": "equal",
+              "value2": "analysis"
             },
             {
-              "id": "plan",
-              "leftValue": "={{ $json.phase }}",
-              "rightValue": "plan",
-              "operator": { "type": "string", "operation": "equals" }
+              "value1": "={{ $json.phase }}",
+              "operation": "equal",
+              "value2": "plan"
             }
-          ],
-          "combinator": "or"
+          ]
         }
       },
       "id": "phase_router",
       "name": "Phase Router",
-      "type": "if",
+      "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [520, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Dynamic prompt with context and round-aware refinement\nconst { phase, round, userInput, documents, refinementHistory, consensusScores, consensusThreshold } = $input.first().json;\nconst templates = {\n  research: { sys: 'You are a research specialist.', obj: 'Conduct thorough, source-backed research.', fmt: 'JSON: {summary, key_findings, sources, methodology, confidence_score}' },\n  analysis: { sys: 'You are a strategic analyst.', obj: 'Analyze research for risks/opportunities.', fmt: 'JSON: {analysis, risks, opportunities, strategic_implications, confidence_score}' },\n  plan: { sys: 'You are a strategist.', obj: 'Create an actionable plan.', fmt: 'JSON: {strategy, action_items, timeline, resources, success_metrics, confidence_score}' }\n};\nconst t = templates[phase];\nlet p = `${t.sys}\\nPhase: ${phase.toUpperCase()} - Round ${round}\\nObjective: ${t.obj}\\n\\nUser Request: ${userInput}\\n\\n`;\nif (phase === 'analysis' && documents.research) p += `Research Context\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\nif (phase === 'plan' && (documents.research || documents.analysis)) {\n  if (documents.research) p += `Research Context\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\n  if (documents.analysis) p += `Analysis Context\\n${JSON.stringify(documents.analysis, null, 2)}\\n\\n`;\n}\nif (round > 1 && refinementHistory.length) {\n  const last = refinementHistory[refinementHistory.length-1];\n  if (last && Array.isArray(last.recommendations)) {\n    p += `Address Prior Feedback:\\n${last.recommendations.map((r,i)=>`${i+1}. ${r}`).join('\\n')}\\n\\n`;\n  }\n}\nif (consensusScores.length) {\n  const avg = consensusScores.reduce((s,x)=>s+x.score,0)/consensusScores.length;\n  p += `Last Consensus: ${avg.toFixed(1)}% | Target: ${consensusThreshold}%\\n\\n`;\n}\np += `Instructions:\\n1) ${t.obj}\\n2) Use output format: ${t.fmt}\\n3) Provide actionable, well-reasoned content with citations if applicable\\n4) Return VALID JSON ONLY\\n`;\nreturn { prompt: p, phase, round };"
+        "jsCode": "// Dynamic prompt with context and round-aware refinement\nconst { phase, round, userInput, documents, refinementHistory, consensusScores, consensusThreshold } = $input.first().json;\nconst templates = {\n  research: { sys: 'You are a research specialist.', obj: 'Conduct thorough, source-backed research.', fmt: 'JSON: {summary, key_findings, sources, methodology, confidence_score}' },\n  analysis: { sys: 'You are a strategic analyst.', obj: 'Analyze research for risks/opportunities.', fmt: 'JSON: {analysis, risks, opportunities, strategic_implications, confidence_score}' },\n  plan: { sys: 'You are a strategist.', obj: 'Create an actionable plan.', fmt: 'JSON: {strategy, action_items, timeline, resources, success_metrics, confidence_score}' }\n};\nconst t = templates[phase];\nlet p = `${t.sys}\\nPhase: ${phase.toUpperCase()} - Round ${round}\\nObjective: ${t.obj}\\n\\nUser Request: ${userInput}\\n\\n`;\nif (phase === 'analysis' && documents.research) p += `Research Context\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\nif (phase === 'plan') {\n  if (documents.research) p += `Research Context\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\n  if (documents.analysis) p += `Analysis Context\\n${JSON.stringify(documents.analysis, null, 2)}\\n\\n`;\n}\nif (round > 1 && refinementHistory.length) {\n  const last = refinementHistory[refinementHistory.length-1];\n  if (last && Array.isArray(last.recommendations)) {\n    p += `Address Prior Feedback:\\n${last.recommendations.map((r,i)=>`${i+1}. ${r}`).join('\\n')}\\n\\n`;\n  }\n}\nif (consensusScores.length) {\n  const avg = consensusScores.reduce((s,x)=>s+x.score,0)/consensusScores.length;\n  p += `Last Consensus: ${avg.toFixed(1)}% | Target: ${consensusThreshold}%\\n\\n`;\n}\np += `Instructions:\\n1) ${t.obj}\\n2) Use output format: ${t.fmt}\\n3) Provide actionable, well-reasoned content with citations if applicable\\n4) Return VALID JSON ONLY\\n`;\nreturn { prompt: p, phase, round, consensusThreshold, maxRounds: $items(0,0).json.maxRounds };"
       },
       "id": "prompt",
       "name": "Dynamic Prompt",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [740, 180]
     },
     {
       "parameters": {
-        "jsCode": "// Prepare vendor-native agent calls as separate items\nconst { prompt, phase, round } = $input.first().json;\nconst active = $input.first().json.agentPerformance?.active || ['qwen','mistral','deepseek','nemotron','llama','kimi'];\nconst failures = this.getWorkflowStaticData('global').agentFailures || {};\n\nconst vendors = [\n  { id:'qwen',    url:'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model:'qwen2.5-72b-instruct', temp:0.7, timeout:45000 },\n  { id:'mistral', url:'https://api.mistral.ai/v1/chat/completions',                            model:'mistral-small-latest',      temp:0.6, timeout:30000 },\n  { id:'deepseek',url:'https://api.deepseek.com/chat/completions',                               model:'deepseek-reasoner',         temp:0.4, timeout:45000 },\n  { id:'nemotron',url:'https://integrate.api.nvidia.com/v1/chat/completions',                   model:'nvidia/nemotron-4-340b-instruct', temp:0.6, timeout:45000 },\n  { id:'llama',   url:'https://api.openai.com/v1/chat/completions',                              model:'gpt-4o-mini',               temp:0.7, timeout:30000 },\n  { id:'kimi',    url:'https://api.moonshot.cn/v1/chat/completions',                             model:'moonshot-v1-8k',            temp:0.8, timeout:45000 }\n];\n\nconst items = vendors\n  .filter(v => active.includes(v.id))\n  .map(v => {\n    const failCount = failures[v.id] || 0;\n    const useFallback = failCount >= 2; // Gemma 3 27B fallback after 2 consecutive failures\n    return {\n      vendor: v.id,\n      url: useFallback ? 'https://openrouter.ai/api/v1/chat/completions' : v.url,\n      model: useFallback ? 'google/gemma-3-27b-it' : v.model,\n      temperature: v.temp,\n      timeout: v.timeout,\n      prompt, phase, round,\n      useFallback\n    };\n  });\n\nreturn items.map(i => ({ json: i }));"
+        "jsCode": "// Prepare vendor-native agent calls as separate items\nconst { prompt, phase, round } = $input.first().json;\nconst active = $items(0,0).json.agentPerformance?.active || ['qwen','mistral','deepseek','nemotron','llama','kimi'];\nconst failures = this.getWorkflowStaticData('global').agentFailures || {};\n\nconst vendors = [\n  { id:'qwen',    url:'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model:'qwen2.5-72b-instruct', temp:0.7, timeout:45000 },\n  { id:'mistral', url:'https://api.mistral.ai/v1/chat/completions',                            model:'mistral-small-latest',      temp:0.6, timeout:30000 },\n  { id:'deepseek',url:'https://api.deepseek.com/chat/completions',                               model:'deepseek-reasoner',         temp:0.4, timeout:45000 },\n  { id:'nemotron',url:'https://integrate.api.nvidia.com/v1/chat/completions',                   model:'nvidia/nemotron-4-340b-instruct', temp:0.6, timeout:45000 },\n  { id:'llama',   url:'https://api.openai.com/v1/chat/completions',                              model:'gpt-4o-mini',               temp:0.7, timeout:30000 },\n  { id:'kimi',    url:'https://api.moonshot.cn/v1/chat/completions',                             model:'moonshot-v1-8k',            temp:0.8, timeout:45000 }\n];\n\nconst items = vendors\n  .filter(v => active.includes(v.id))\n  .map(v => {\n    const failCount = failures[v.id] || 0;\n    const useFallback = failCount >= 2;\n    return {\n      vendor: v.id,\n      url: useFallback ? 'https://openrouter.ai/api/v1/chat/completions' : v.url,\n      model: useFallback ? 'google/gemma-3-27b-it' : v.model,\n      temperature: v.temp,\n      timeout: v.timeout,\n      prompt, phase, round,\n      useFallback\n    };\n  });\n\nreturn items.map(i => ({ json: i }));"
       },
       "id": "prepare_agents",
       "name": "Prepare Agent Calls",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [960, 180]
     },
@@ -87,7 +78,13 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "={{ $json.url }}",
-        "sendHeaders": true,
+        "jsonParameters": true,
+        "options": {
+          "bodyContentType": "json",
+          "timeout": "={{ $json.timeout }}",
+          "ignoreResponseCode": true
+        },
+        "sendBody": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
@@ -97,45 +94,32 @@
             }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "={{ $json.model }}" },
-            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"{{ $json.prompt }\"}]" },
-            { "name": "max_tokens", "value": 3500 },
-            { "name": "temperature", "value": "={{ $json.temperature }}" }
-          ]
-        },
-        "options": {
-          "timeout": "={{ $json.timeout }}",
-          "ignoreResponseCode": true
-        }
+        "bodyParametersJson": "={{ { model: $json.model, messages: [{ role: 'user', content: $json.prompt }], max_tokens: 3500, temperature: $json.temperature } }}"
       },
       "id": "agent_http",
       "name": "Agent HTTP (Parallel)",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1180, 180],
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "// Aggregate responses, score quality, update failure counters\nconst globalStore = this.getWorkflowStaticData('global');\nif (!globalStore.agentFailures) globalStore.agentFailures = {};\n\nconst responses = [];\nconst errors = [];\n\n$input.all().forEach((item, idx) => {\n  const meta = item.json; // contains vendor, useFallback, etc if merged\n  const raw = item.json;\n  const vendor = meta.vendor || 'unknown';\n\n  // HTTP node returns the response JSON under item.json if 2xx; otherwise also under json w/ error fields (ignoreResponseCode true)\n  const choices = raw.choices;\n  const content = choices && choices[0] && choices[0].message && choices[0].message.content;\n  if (content) {\n    let parsed;\n    try { parsed = JSON.parse(content); } catch(e) { parsed = { raw_content: content, confidence_score: 50 }; }\n    const score = scoreQuality(parsed, $items(0,0).json.phase);\n    responses.push({ vendor, content: parsed, score, fallback: !!meta.useFallback });\n    // success -> reset failure counter
-    globalStore.agentFailures[vendor] = 0;\n  } else {\n    errors.push({ vendor, error: raw.error || raw });\n    globalStore.agentFailures[vendor] = (globalStore.agentFailures[vendor] || 0) + 1;\n  }\n});\n\nresponses.sort((a,b)=>b.score-a.score);\n\nfunction scoreQuality(doc, phase){\n  let s=0;\n  if (doc && typeof doc==='object') s+=20;\n  if (typeof doc.confidence_score==='number') s+=Math.min(doc.confidence_score*0.5,40);\n  if (doc.summary||doc.analysis||doc.strategy) s+=20;\n  if (phase==='research' && doc.sources && doc.key_findings) s+=20;\n  if (phase==='analysis' && doc.risks && doc.opportunities) s+=20;\n  if (phase==='plan' && doc.action_items && doc.timeline) s+=20;\n  return Math.min(100,s);\n}\n\nreturn { responses, errors, phase: $items(0,0).json.phase, round: $items(0,0).json.round };"
+        "jsCode": "// Aggregate responses, score quality, update failure counters\nconst globalStore = this.getWorkflowStaticData('global');\nif (!globalStore.agentFailures) globalStore.agentFailures = {};\n\nconst responses = [];\nconst errors = [];\n\n$input.all().forEach((item) => {\n  const raw = item.json;\n  const vendor = raw.vendor || 'unknown';\n  const choices = raw.choices;\n  const content = choices && choices[0] && choices[0].message && choices[0].message.content;\n  if (content) {\n    let parsed;\n    try { parsed = JSON.parse(content); } catch(e) { parsed = { raw_content: content, confidence_score: 50 }; }\n    const score = scoreQuality(parsed, $items(0,0).json.phase);\n    responses.push({ vendor, content: parsed, score, fallback: !!raw.useFallback });\n    globalStore.agentFailures[vendor] = 0;\n  } else {\n    errors.push({ vendor, error: raw.error || raw });\n    globalStore.agentFailures[vendor] = (globalStore.agentFailures[vendor] || 0) + 1;\n  }\n});\n\nresponses.sort((a,b)=>b.score-a.score);\n\nfunction scoreQuality(doc, phase){\n  let s=0;\n  if (doc && typeof doc==='object') s+=20;\n  if (typeof doc.confidence_score==='number') s+=Math.min(doc.confidence_score*0.5,40);\n  if (doc.summary||doc.analysis||doc.strategy) s+=20;\n  if (phase==='research' && doc.sources && doc.key_findings) s+=20;\n  if (phase==='analysis' && doc.risks && doc.opportunities) s+=20;\n  if (phase==='plan' && doc.action_items && doc.timeline) s+=20;\n  return Math.min(100,s);\n}\n\nreturn { responses, errors, phase: $items(0,0).json.phase, round: $items(0,0).json.round };"
       },
       "id": "aggregate",
       "name": "Aggregate + Score",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1400, 180]
     },
     {
       "parameters": {
-        "jsCode": "// Build committee evaluation prompt\nconst { responses, phase, round } = $input.first().json;\nconst prompt = `Committee Evaluation - ${phase.toUpperCase()}\\nRound: ${round}\\nTotal Responses: ${responses.length}\\n\\n` + responses.map((r,i)=>`#${i+1} Vendor:${r.vendor} Score:${r.score}%\\n${JSON.stringify(r.content, null, 2)}`).join('\\n\\n') + `\\n\\nReturn STRICT JSON: {\\"consensus_score\\": number (0-100), \\"divergence_points\\": string[], \\"recommendations\\": string[], \\"readiness_assessment\\": \\"ready\\"|\\"incomplete\\" }`;\nreturn { evaluationPrompt: prompt, phase, round, topK: responses.slice(0,3) };"
+        "jsCode": "// Build committee evaluation prompt + carry context\nconst { responses, phase, round } = $input.first().json;\nconst ctx = $items(0,0).json; // from init state upstream via separate input later if needed\nconst prompt = `Committee Evaluation - ${phase.toUpperCase()}\\nRound: ${round}\\nTotal Responses: ${responses.length}\\n\\n` + responses.map((r,i)=>`#${i+1} Vendor:${r.vendor} Score:${r.score}%\\n${JSON.stringify(r.content, null, 2)}`).join('\\n\\n') + `\\n\\nReturn STRICT JSON: {\\"consensus_score\\": number (0-100), \\"divergence_points\\": string[], \\"recommendations\\": string[], \\"readiness_assessment\\": \\"ready\\"|\\"incomplete\\" }`;\nreturn { evaluationPrompt: prompt, phase, round, topK: responses.slice(0,3), consensusThreshold: ctx.consensusThreshold, maxRounds: ctx.maxRounds };"
       },
       "id": "committee_prep",
       "name": "Committee Prep",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1620, 180]
     },
@@ -143,27 +127,20 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "https://api.deepseek.com/chat/completions",
-        "sendHeaders": true,
+        "jsonParameters": true,
+        "options": { "bodyContentType": "json", "timeout": 45000, "ignoreResponseCode": true },
+        "sendBody": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
             { "name": "Authorization", "value": "Bearer {{ $env.DEEPSEEK_API_KEY }}" }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "deepseek-reasoner" },
-            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"{{ $json.evaluationPrompt }\"}]" },
-            { "name": "temperature", "value": 0.2 },
-            { "name": "max_tokens", "value": 2000 }
-          ]
-        },
-        "options": { "timeout": 45000, "ignoreResponseCode": true }
+        "bodyParametersJson": "={{ { model: 'deepseek-reasoner', messages: [{ role: 'user', content: $json.evaluationPrompt }], temperature: 0.2, max_tokens: 2000 } }}"
       },
       "id": "committee_primary",
       "name": "Committee (Primary: DeepSeek R1T2)",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1840, 120],
       "continueOnFail": true
@@ -172,58 +149,51 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "https://api.mistral.ai/v1/chat/completions",
-        "sendHeaders": true,
+        "jsonParameters": true,
+        "options": { "bodyContentType": "json", "timeout": 45000, "ignoreResponseCode": true },
+        "sendBody": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
             { "name": "Authorization", "value": "Bearer {{ $env.MISTRAL_API_KEY }}" }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "mistral-large-latest" },
-            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"{{ $json.evaluationPrompt }\"}]" },
-            { "name": "temperature", "value": 0.2 },
-            { "name": "max_tokens", "value": 2000 }
-          ]
-        },
-        "options": { "timeout": 45000, "ignoreResponseCode": true }
+        "bodyParametersJson": "={{ { model: 'mistral-large-latest', messages: [{ role: 'user', content: $json.evaluationPrompt }], temperature: 0.2, max_tokens: 2000 } }}"
       },
       "id": "committee_backup",
       "name": "Committee (Backup: Mistral Nemo)",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1840, 240],
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "// Parse primary, fallback to backup if invalid\nconst primary = $items(0,0).json;\nconst backup = $items(1,0).json;\n\nfunction parseEval(resp){\n  if (!resp || !resp.choices || !resp.choices[0]) return null;\n  const text = resp.choices[0].message?.content || '';\n  try { return JSON.parse(text); } catch(e) { return null; }\n}\n\nlet result = parseEval(primary) || parseEval(backup) || { consensus_score: 0, divergence_points: [], recommendations: [], readiness_assessment: 'incomplete' };\nreturn result;"
+        "jsCode": "// Parse primary, fallback to backup; pass through context\nconst primary = $items(0,0).json;\nconst backup = $items(1,0).json;\nconst ctx = $items(2,0).json; // from Committee Prep\nfunction parseEval(resp){\n  if (!resp || !resp.choices || !resp.choices[0]) return null;\n  const text = resp.choices[0].message?.content || '';\n  try { return JSON.parse(text); } catch(e) { return null; }\n}\n\nlet result = parseEval(primary) || parseEval(backup) || { consensus_score: 0, divergence_points: [], recommendations: [], readiness_assessment: 'incomplete' };\nreturn { eval: result, ctx };"
       },
       "id": "parse_eval",
       "name": "Parse Committee Eval (w/ Backup)",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2060, 180]
     },
     {
       "parameters": {
-        "jsCode": "// Decide next step based on consensus and rounds\nconst evalRes = $input.first().json;\nconst state = $items(0,0).json; // original state upstream in execution path\nconst score = Number(evalRes.consensus_score || 0);\nconst threshold = Number(state.consensusThreshold || 85);\nconst canRetry = state.round < state.maxRounds;\nconst hasConsensus = score >= threshold;\n\nreturn { hasConsensus, canRetry, score, threshold, evalRes, phase: state.phase, round: state.round };"
+        "jsCode": "// Decide next step based on consensus and rounds\nconst { eval: evalRes, ctx } = $input.first().json;\nconst score = Number(evalRes.consensus_score || 0);\nconst threshold = Number(ctx.consensusThreshold || 85);\nconst canRetry = ctx.round < (ctx.maxRounds || 4);\nconst hasConsensus = score >= threshold;\nreturn { hasConsensus, canRetry, score, threshold, evalRes, ctx };"
       },
       "id": "decision",
       "name": "Consensus Decision",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2280, 180]
     },
     {
       "parameters": {
-        "jsCode": "// Synthesize doc from top responses\nconst top = $items(0,0).json.topK || [];\nconst { phase } = $input.first().json;\nlet prompt = `Synthesize ${phase.toUpperCase()} Document\\nUse best responses, resolve conflicts, ensure coherence.\\nReturn polished, publication-ready prose.`;\nprompt += '\\n\\nTOP RESPONSES:\\n' + top.map((r,i)=>`#${i+1} (${r.vendor}) Score:${r.score}%\\n${JSON.stringify(r.content, null, 2)}`).join('\\n\\n');\nreturn { synthPrompt: prompt, phase };"
+        "jsCode": "// Synthesize doc using top responses\nconst dec = $items(0,0).json;\nconst top = $items(1,0).json.topK || [];\nconst phase = dec.ctx.phase;\nlet prompt = `Synthesize ${phase.toUpperCase()} Document\\nUse best responses, resolve conflicts, ensure coherence.\\nReturn polished, publication-ready prose.`;\nprompt += '\\n\\nTOP RESPONSES:\\n' + top.map((r,i)=>`#${i+1} (${r.vendor}) Score:${r.score}%\\n${JSON.stringify(r.content, null, 2)}`).join('\\n\\n');\nreturn { synthPrompt: prompt, phase };"
       },
       "id": "synth_prep",
       "name": "Synthesis Prep",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2500, 100]
     },
@@ -231,56 +201,48 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "https://api.openai.com/v1/chat/completions",
-        "sendHeaders": true,
+        "jsonParameters": true,
+        "options": { "bodyContentType": "json", "timeout": 45000 },
+        "sendBody": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
             { "name": "Authorization", "value": "Bearer {{ $env.OPENAI_API_KEY }}" }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "gpt-4o" },
-            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"{{ $json.synthPrompt }\"}]" },
-            { "name": "temperature", "value": 0.4 },
-            { "name": "max_tokens", "value": 3500 }
-          ]
-        },
-        "options": { "timeout": 45000 }
+        "bodyParametersJson": "={{ { model: 'gpt-4o', messages: [{ role: 'user', content: $json.synthPrompt }], temperature: 0.4, max_tokens: 3500 } }}"
       },
       "id": "synth_http",
       "name": "Synthesize Document",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [2720, 100]
     },
     {
       "parameters": {
-        "jsCode": "// Update state with synthesized or best-available, transition phase or loop\nconst state = $items(0,0).json;\nconst decision = $items(2,0).json;\nconst phase = decision.phase;\nconst out = $items(1,0).json;\n\n// Extract synthesized text\nlet doc = null;\nif (out && out.choices && out.choices[0]) {\n  doc = { document: out.choices[0].message.content, generated_at: new Date().toISOString() };\n}\n\nconst next = { ...state };\nif (doc) next.documents[phase] = doc;\n\nif (decision.hasConsensus) {\n  // advance phase
-  const order = ['research','analysis','plan'];\n  const idx = order.indexOf(state.phase);\n  if (idx >= 0 && idx < order.length-1) { next.phase = order[idx+1]; next.round = 1; next.refinementHistory = []; }\n  else { next.phase = 'complete'; next.completedAt = new Date().toISOString(); }\n  next.consensusScores.push({ phase, round: state.round, score: decision.score, ts: new Date().toISOString() });\n} else if (decision.canRetry) {\n  // loop with feedback
-  next.round = state.round + 1;\n  next.refinementHistory.push({ phase, round: state.round, recommendations: ($items(1,0).json.evalRes?.recommendations)||[], score: decision.score, ts: new Date().toISOString() });\n} else {\n  // finalize best-available and advance
-  const order = ['research','analysis','plan'];\n  const idx = order.indexOf(state.phase);\n  if (idx >= 0 && idx < order.length-1) { next.phase = order[idx+1]; next.round = 1; } else { next.phase = 'complete'; next.completedAt = new Date().toISOString(); }\n  next.consensusScores.push({ phase, round: state.round, score: decision.score, ts: new Date().toISOString(), note: 'max rounds' });\n}\n\nnext.updatedAt = new Date().toISOString();\nreturn next;"
+        "jsCode": "// Update state with synthesized or best-available, transition phase or loop\nconst state = $items(2,0).json; // from Init Durable State\nconst decision = $items(1,0).json; // from Consensus Decision\nconst synth = $items(0,0).json; // from Synthesize Document\n\nconst phase = decision.ctx.phase;\nlet doc = null;\nif (synth && synth.choices && synth.choices[0]) {\n  doc = { document: synth.choices[0].message.content, generated_at: new Date().toISOString() };\n}\nconst next = { ...state };\nif (doc) next.documents[phase] = doc;\n\nif (decision.hasConsensus) {\n  const order = ['research','analysis','plan'];\n  const idx = order.indexOf(state.phase);\n  if (idx >= 0 && idx < order.length-1) { next.phase = order[idx+1]; next.round = 1; next.refinementHistory = []; }\n  else { next.phase = 'complete'; next.completedAt = new Date().toISOString(); }\n  next.consensusScores.push({ phase, round: state.round, score: decision.score, ts: new Date().toISOString() });\n} else if (decision.canRetry) {\n  next.round = state.round + 1;\n  next.refinementHistory.push({ phase, round: state.round, recommendations: decision.evalRes?.recommendations || [], score: decision.score, ts: new Date().toISOString() });\n} else {\n  const order = ['research','analysis','plan'];\n  const idx = order.indexOf(state.phase);\n  if (idx >= 0 && idx < order.length-1) { next.phase = order[idx+1]; next.round = 1; } else { next.phase = 'complete'; next.completedAt = new Date().toISOString(); }\n  next.consensusScores.push({ phase, round: state.round, score: decision.score, ts: new Date().toISOString(), note: 'max rounds' });\n}\n\nnext.updatedAt = new Date().toISOString();\nreturn next;"
       },
       "id": "update_state",
       "name": "Update State + Transition",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2940, 100]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            { "id": "done", "leftValue": "={{ $json.phase }}", "rightValue": "complete", "operator": { "type": "string", "operation": "equals" } }
-          ],
-          "combinator": "or"
+          "string": [
+            {
+              "value1": "={{ $json.phase }}",
+              "operation": "equal",
+              "value2": "complete"
+            }
+          ]
         }
       },
       "id": "done_check",
       "name": "Is Complete?",
-      "type": "if",
+      "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [3160, 100]
     },
@@ -290,7 +252,7 @@
       },
       "id": "final_report",
       "name": "Final Report",
-      "type": "code",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [3380, 60]
     },
@@ -298,27 +260,19 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-        "sendHeaders": true,
+        "options": { "timeout": 45000, "bodyContentType": "raw" },
+        "sendBody": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "multipart/related; boundary=boundary" },
             { "name": "Authorization", "value": "Bearer {{ $env.GOOGLE_DRIVE_TOKEN }}" }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "body",
-              "value": "=--boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\n  \"name\": \"multi-agent-report-{{ $json.finalReport.executive_summary.workflow_id }}.json\",\n  \"mimeType\": \"application/json\"\n}\r\n--boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{{ JSON.stringify($json.finalReport) }}\r\n--boundary--"
-            }
-          ]
-        },
-        "options": { "timeout": 45000 }
+        "body": "=--boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\n  \"name\": \"multi-agent-report-{{ $json.finalReport.executive_summary.workflow_id }}.json\",\n  \"mimeType\": \"application/json\"\n}\r\n--boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{{ JSON.stringify($json.finalReport) }}\r\n--boundary--"
       },
       "id": "drive",
       "name": "Google Drive Upload",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [3600, 60]
     },
@@ -326,25 +280,15 @@
       "parameters": {
         "httpMethod": "POST",
         "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [ { "name": "Content-Type", "value": "application/json" } ]
-        },
+        "jsonParameters": true,
+        "options": { "bodyContentType": "json", "timeout": 20000 },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "chat_id", "value": "{{ $env.TELEGRAM_CHAT_ID }}" },
-            {
-              "name": "text",
-              "value": "🚀 Multi-Agent Workflow v3 Complete!\nWorkflow: {{ $json.finalReport.executive_summary.workflow_id }}\nAvg Consensus: {{ $json.finalReport.executive_summary.average_consensus }}%\nCompleted: {{ $json.finalReport.executive_summary.completed }}\nRounds: {{ $json.finalReport.executive_summary.total_rounds }}"
-            }
-          ]
-        },
-        "options": { "timeout": 20000 }
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/json" } ] },
+        "bodyParametersJson": "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: `🚀 Multi-Agent Workflow v3 Complete!\\nWorkflow: ${$json.finalReport.executive_summary.workflow_id}\\nAvg Consensus: ${$json.finalReport.executive_summary.average_consensus}%\\nCompleted: ${$json.finalReport.executive_summary.completed}\\nRounds: ${$json.finalReport.executive_summary.total_rounds}` } }}"
       },
       "id": "telegram",
       "name": "Telegram Notify",
-      "type": "httpRequest",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [3820, 60]
     }
@@ -363,14 +307,18 @@
     "Aggregate + Score": { "main": [[{ "node": "Committee Prep", "type": "main", "index": 0 }]] },
     "Committee Prep": { "main": [[
       { "node": "Committee (Primary: DeepSeek R1T2)", "type": "main", "index": 0 },
-      { "node": "Committee (Backup: Mistral Nemo)", "type": "main", "index": 0 }
+      { "node": "Committee (Backup: Mistral Nemo)", "type": "main", "index": 0 },
+      { "node": "Parse Committee Eval (w/ Backup)", "type": "main", "index": 0 }
     ]] },
     "Committee (Primary: DeepSeek R1T2)": { "main": [[{ "node": "Parse Committee Eval (w/ Backup)", "type": "main", "index": 0 }]] },
     "Committee (Backup: Mistral Nemo)": { "main": [[{ "node": "Parse Committee Eval (w/ Backup)", "type": "main", "index": 1 }]] },
     "Parse Committee Eval (w/ Backup)": { "main": [[{ "node": "Consensus Decision", "type": "main", "index": 0 }]] },
     "Consensus Decision": { "main": [[{ "node": "Synthesis Prep", "type": "main", "index": 0 }]] },
+    "Committee Prep": { "main": [[{ "node": "Synthesis Prep", "type": "main", "index": 1 }]] },
     "Synthesis Prep": { "main": [[{ "node": "Synthesize Document", "type": "main", "index": 0 }]] },
     "Synthesize Document": { "main": [[{ "node": "Update State + Transition", "type": "main", "index": 0 }]] },
+    "Consensus Decision": { "main": [[{ "node": "Update State + Transition", "type": "main", "index": 1 }]] },
+    "Init Durable State": { "main": [[{ "node": "Update State + Transition", "type": "main", "index": 2 }]] },
     "Update State + Transition": { "main": [[{ "node": "Is Complete?", "type": "main", "index": 0 }]] },
     "Is Complete?": { "main": [
       [ { "node": "Final Report", "type": "main", "index": 0 } ],
