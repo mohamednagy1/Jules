@@ -1,0 +1,513 @@
+{
+  "name": "Advanced Multi-Agent Workflow with Committee Evaluation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "multi-agent-workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced state initialization with validation\nconst input = $input.first().json;\nconst userInput = input.message || input.userInput || input.query || 'Default research request';\nconst priority = input.priority || 'normal'; // high, normal, low\nconst maxRounds = input.maxRounds || 4;\nconst consensusThreshold = input.consensusThreshold || 85;\n\n// Initialize comprehensive state\nconst initialState = {\n  // Core workflow state\n  phase: 'research',\n  round: 1,\n  maxRounds,\n  consensusThreshold,\n  priority,\n  status: 'active',\n  \n  // Document management\n  documents: {\n    research: null,\n    analysis: null,\n    plan: null\n  },\n  \n  // Agent performance tracking\n  agentPerformance: {\n    active: ['qwen3', 'mistral', 'deepseek', 'nemotron', 'llama', 'kimi'],\n    failed: [],\n    timeout: [],\n    scores: {}\n  },\n  \n  // Refinement and consensus\n  refinementHistory: [],\n  consensusScores: [],\n  divergencePoints: [],\n  \n  // User context\n  userInput,\n  timestamp: new Date().toISOString(),\n  workflowId: `wf_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n};\n\n// Validate input\nif (!userInput || userInput.trim().length < 10) {\n  throw new Error('User input must be at least 10 characters long');\n}\n\nreturn initialState;"
+      },
+      "id": "enhanced-state-init",
+      "name": "Enhanced State Initialization",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "research",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "research",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "analysis",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "analysis",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "plan",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "plan",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "complete",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "smart-phase-router",
+      "name": "Smart Phase Router",
+      "type": "if",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dynamic prompt generation with context awareness\nconst state = $input.first().json;\nconst { phase, round, userInput, documents, refinementHistory, consensusScores } = state;\n\n// Phase-specific prompt templates\nconst promptTemplates = {\n  research: {\n    system: 'You are a research specialist conducting comprehensive analysis.',\n    objective: 'Conduct thorough research on the topic with reliable sources.',\n    outputFormat: 'JSON with: summary, key_findings, sources, methodology, confidence_score',\n    evaluationCriteria: ['accuracy', 'completeness', 'source_quality', 'relevance']\n  },\n  analysis: {\n    system: 'You are a strategic analyst evaluating research findings.',\n    objective: 'Analyze research for vulnerabilities, opportunities, and strategic insights.',\n    outputFormat: 'JSON with: analysis, risks, opportunities, strategic_implications, confidence_score',\n    evaluationCriteria: ['critical_thinking', 'risk_assessment', 'strategic_depth', 'actionability']\n  },\n  plan: {\n    system: 'You are a strategic planner creating actionable implementation plans.',\n    objective: 'Develop comprehensive, actionable implementation strategies.',\n    outputFormat: 'JSON with: strategy, action_items, timeline, resources, success_metrics, confidence_score',\n    evaluationCriteria: ['feasibility', 'completeness', 'resource_planning', 'measurability']\n  }\n};\n\nconst template = promptTemplates[phase];\nlet prompt = `${template.system}\\n\\n`;\nprompt += `Phase: ${phase.toUpperCase()} - Round ${round}\\n`;\nprompt += `Objective: ${template.objective}\\n\\n`;\nprompt += `User Request: ${userInput}\\n\\n`;\n\n// Inject context from previous phases\nif (phase === 'analysis' && documents.research) {\n  prompt += `Research Context:\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\n}\n\nif (phase === 'plan' && documents.research && documents.analysis) {\n  prompt += `Research Context:\\n${JSON.stringify(documents.research, null, 2)}\\n\\n`;\n  prompt += `Analysis Context:\\n${JSON.stringify(documents.analysis, null, 2)}\\n\\n`;\n}\n\n// Add refinement context\nif (round > 1 && refinementHistory.length > 0) {\n  const lastFeedback = refinementHistory[refinementHistory.length - 1];\n  prompt += `Previous Feedback:\\n${lastFeedback.recommendations.join('\\n')}\\n\\n`;\n  prompt += `Address these points:\\n`;\n  lastFeedback.recommendations.forEach((rec, i) => {\n    prompt += `${i + 1}. ${rec}\\n`;\n  });\n  prompt += `\\n`;\n}\n\n// Add consensus context\nif (consensusScores.length > 0) {\n  const avgScore = consensusScores.reduce((a, b) => a + b, 0) / consensusScores.length;\n  prompt += `Previous Consensus Score: ${avgScore.toFixed(1)}%\\n`;\n  prompt += `Target: ${state.consensusThreshold}%\\n\\n`;\n}\n\nprompt += `Instructions:\\n`;\nprompt += `1. ${template.objective}\\n`;\nprompt += `2. Use the specified output format\\n`;\nprompt += `3. Ensure high confidence_score (80%+) based on: ${template.evaluationCriteria.join(', ')}\\n`;\nprompt += `4. Provide actionable, well-reasoned insights\\n`;\nprompt += `5. Return valid JSON only\\n\\n`;\nprompt += `Output Format: ${template.outputFormat}`;\n\nreturn {\n  prompt,\n  phase,\n  round,\n  template,\n  state\n};"
+      },
+      "id": "dynamic-prompt-generator",
+      "name": "Dynamic Prompt Generator",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [740, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Multi-agent execution with load balancing and error handling\nconst { prompt, phase, round, state } = $input.first().json;\n\n// Agent configurations with fallbacks\nconst agents = [\n  {\n    id: 'qwen3',\n    name: 'Qwen3 Coder',\n    model: 'qwen2.5-72b-instruct',\n    maxTokens: 4000,\n    temperature: 0.7,\n    timeout: 45000,\n    priority: 'high'\n  },\n  {\n    id: 'mistral',\n    name: 'Mistral Small 3.2',\n    model: 'mistral-small-latest',\n    maxTokens: 3000,\n    temperature: 0.6,\n    timeout: 30000,\n    priority: 'medium'\n  },\n  {\n    id: 'deepseek',\n    name: 'DeepSeek R1',\n    model: 'deepseek-chat',\n    maxTokens: 4000,\n    temperature: 0.5,\n    timeout: 45000,\n    priority: 'high'\n  },\n  {\n    id: 'nemotron',\n    name: 'NVIDIA Nemotron',\n    model: 'gpt-4o',\n    maxTokens: 4000,\n    temperature: 0.6,\n    timeout: 45000,\n    priority: 'high'\n  },\n  {\n    id: 'llama',\n    name: 'Meta Llama 3.3',\n    model: 'gpt-4o-mini',\n    maxTokens: 3000,\n    temperature: 0.7,\n    timeout: 30000,\n    priority: 'medium'\n  },\n  {\n    id: 'kimi',\n    name: 'Moonshot Kimi',\n    model: 'gpt-4o',\n    maxTokens: 4000,\n    temperature: 0.8,\n    timeout: 45000,\n    priority: 'medium'\n  }\n];\n\n// Filter active agents\nconst activeAgents = agents.filter(agent => \n  state.agentPerformance.active.includes(agent.id)\n);\n\nif (activeAgents.length === 0) {\n  throw new Error('No active agents available');\n}\n\n// Prepare agent execution data\nconst agentExecutions = activeAgents.map(agent => ({\n  agentId: agent.id,\n  agentName: agent.name,\n  model: agent.model,\n  maxTokens: agent.maxTokens,\n  temperature: agent.temperature,\n  timeout: agent.timeout,\n  prompt,\n  phase,\n  round,\n  timestamp: new Date().toISOString()\n}));\n\nreturn {\n  agentExecutions,\n  totalAgents: activeAgents.length,\n  phase,\n  round,\n  state\n};"
+      },
+      "id": "agent-orchestrator",
+      "name": "Agent Orchestrator",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": "={{ $json.maxTokens }}"
+            },
+            {
+              "name": "temperature",
+              "value": "={{ $json.temperature }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": "={{ $json.timeout }}"
+        }
+      },
+      "id": "agent-executor",
+      "name": "Agent Executor",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1180, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced response aggregation with quality scoring\nconst responses = [];\nconst errors = [];\nconst performanceMetrics = {};\n\n// Process all agent responses\n$input.all().forEach((item, index) => {\n  const execution = item.json;\n  \n  if (execution.choices && execution.choices[0]) {\n    try {\n      // Parse response content\n      const content = execution.choices[0].message.content;\n      let parsedContent;\n      \n      try {\n        parsedContent = JSON.parse(content);\n      } catch (parseError) {\n        // Handle non-JSON responses\n        parsedContent = {\n          raw_content: content,\n          parse_error: parseError.message,\n          confidence_score: 50\n        };\n      }\n      \n      // Calculate quality score\n      const qualityScore = calculateQualityScore(parsedContent, execution.phase);\n      \n      responses.push({\n        agentId: execution.agentId,\n        agentName: execution.agentName,\n        content: parsedContent,\n        qualityScore,\n        timestamp: execution.timestamp,\n        model: execution.model,\n        responseTime: execution.responseTime || 0\n      });\n      \n      // Track performance\n      performanceMetrics[execution.agentId] = {\n        qualityScore,\n        responseTime: execution.responseTime || 0,\n        success: true\n      };\n      \n    } catch (error) {\n      errors.push({\n        agentId: execution.agentId,\n        agentName: execution.agentName,\n        error: error.message,\n        timestamp: execution.timestamp\n      });\n      \n      performanceMetrics[execution.agentId] = {\n        success: false,\n        error: error.message\n      };\n    }\n  } else {\n    errors.push({\n      agentId: execution.agentId || `unknown_${index}`,\n      agentName: execution.agentName || 'Unknown Agent',\n      error: 'No valid response received',\n      timestamp: new Date().toISOString()\n    });\n  }\n});\n\n// Sort responses by quality score\nresponses.sort((a, b) => b.qualityScore - a.qualityScore);\n\n// Calculate aggregate metrics\nconst totalResponses = responses.length;\nconst avgQualityScore = totalResponses > 0 ? \n  responses.reduce((sum, r) => sum + r.qualityScore, 0) / totalResponses : 0;\n\nconst aggregatedData = {\n  responses,\n  errors,\n  performanceMetrics,\n  totalResponses,\n  avgQualityScore,\n  phase: $input.first().json.phase,\n  round: $input.first().json.round,\n  timestamp: new Date().toISOString()\n};\n\n// Quality scoring function\nfunction calculateQualityScore(content, phase) {\n  let score = 0;\n  \n  // Base score for valid JSON\n  if (content && typeof content === 'object') {\n    score += 20;\n  }\n  \n  // Confidence score (if available)\n  if (content.confidence_score && typeof content.confidence_score === 'number') {\n    score += Math.min(content.confidence_score * 0.5, 40);\n  }\n  \n  // Content completeness\n  if (content.summary || content.analysis || content.strategy) {\n    score += 20;\n  }\n  \n  // Phase-specific scoring\n  switch (phase) {\n    case 'research':\n      if (content.sources && content.key_findings) score += 20;\n      break;\n    case 'analysis':\n      if (content.risks && content.opportunities) score += 20;\n      break;\n    case 'plan':\n      if (content.action_items && content.timeline) score += 20;\n      break;\n  }\n  \n  return Math.min(score, 100);\n}\n\nreturn aggregatedData;"
+      },
+      "id": "response-aggregator",
+      "name": "Response Aggregator",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Advanced committee evaluation with multiple evaluators\nconst aggregatedData = $input.first().json;\nconst { responses, phase, round, avgQualityScore } = aggregatedData;\n\n// Committee evaluation prompt\nconst evaluationPrompt = `Committee Evaluation - ${phase.toUpperCase()} Phase\\n\\n` +\n  `Round: ${round}\\n` +\n  `Total Responses: ${responses.length}\\n` +\n  `Average Quality Score: ${avgQualityScore.toFixed(1)}%\\n\\n` +\n  `Agent Responses:\\n` +\n  responses.map((r, i) => \n    `\\nAgent ${i + 1} (${r.agentName}):\\n` +\n    `Quality Score: ${r.qualityScore}%\\n` +\n    `Content: ${JSON.stringify(r.content, null, 2)}`\n  ).join('\\n') +\n  `\\n\\nEvaluation Instructions:\\n` +\n  `1. Analyze response quality, consistency, and alignment\\n` +\n  `2. Calculate consensus score (0-100%)\\n` +\n  `3. Identify key divergence points and areas of agreement\\n` +\n  `4. Provide specific recommendations for improvement\\n` +\n  `5. Assess overall phase completion readiness\\n` +\n  `6. Return JSON with: consensus_score, divergence_points, recommendations, readiness_assessment, quality_analysis`;\n\n// Prepare evaluation package for committee\nconst committeePackage = {\n  evaluationPrompt,\n  responses,\n  phase,\n  round,\n  avgQualityScore,\n  timestamp: new Date().toISOString()\n};\n\nreturn committeePackage;"
+      },
+      "id": "committee-preparation",
+      "name": "Committee Preparation",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1620, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.OPENAI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.evaluationPrompt }\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 3000
+            },
+            {
+              "name": "temperature",
+              "value": 0.3
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "committee-evaluation",
+      "name": "Committee Evaluation",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [1840, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consensus decision engine with intelligent routing\nconst committeeResponse = $input.first().json;\nconst committeePackage = $input.first().json.committeePackage;\n\nlet consensusScore = 0;\nlet divergencePoints = [];\nlet recommendations = [];\nlet readinessAssessment = 'incomplete';\nlet qualityAnalysis = {};\n\n// Parse committee evaluation\nif (committeeResponse.choices && committeeResponse.choices[0]) {\n  try {\n    const content = committeeResponse.choices[0].message.content;\n    const parsed = JSON.parse(content);\n    \n    consensusScore = parsed.consensus_score || 0;\n    divergencePoints = parsed.divergence_points || [];\n    recommendations = parsed.recommendations || [];\n    readinessAssessment = parsed.readiness_assessment || 'incomplete';\n    qualityAnalysis = parsed.quality_analysis || {};\n    \n  } catch (parseError) {\n    // Fallback parsing for non-JSON responses\n    const content = committeeResponse.choices[0].message.content;\n    \n    // Extract consensus score using regex\n    const scoreMatch = content.match(/consensus_score[\\s:]*([0-9]+)/i);\n    if (scoreMatch) consensusScore = parseInt(scoreMatch[1]);\n    \n    // Extract recommendations\n    const recMatches = content.match(/recommendation[\\s:]*([^\\n]+)/gi);\n    if (recMatches) {\n      recommendations = recMatches.map(rec => rec.replace(/^recommendation[\\s:]*/i, '').trim());\n    }\n  }\n}\n\n// Decision logic\nconst hasConsensus = consensusScore >= committeePackage.consensusThreshold || 85;\nconst canRetry = committeePackage.round < committeePackage.maxRounds || 4;\nconst isReady = readinessAssessment === 'ready' || consensusScore >= 90;\n\n// Determine next action\nlet nextAction = 'retry';\nif (hasConsensus && isReady) {\n  nextAction = 'proceed';\n} else if (!canRetry) {\n  nextAction = 'finalize';\n} else if (consensusScore < 50) {\n  nextAction = 'escalate';\n}\n\nconst decision = {\n  consensusScore,\n  divergencePoints,\n  recommendations,\n  readinessAssessment,\n  qualityAnalysis,\n  hasConsensus,\n  canRetry,\n  isReady,\n  nextAction,\n  phase: committeePackage.phase,\n  round: committeePackage.round,\n  timestamp: new Date().toISOString()\n};\n\nreturn decision;"
+      },
+      "id": "consensus-decision-engine",
+      "name": "Consensus Decision Engine",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2060, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Document synthesis with quality enhancement\nconst decision = $input.first().json;\nconst committeePackage = $input.first().json.committeePackage;\nconst responses = committeePackage.responses;\n\n// Create enhanced synthesis prompt\nlet synthesisPrompt = `Document Synthesis - ${decision.phase.toUpperCase()} Phase\\n\\n`;\n\nsynthesisPrompt += `Consensus Score: ${decision.consensusScore}%\\n`;\nsynthesisPrompt += `Readiness: ${decision.readinessAssessment}\\n`;\nsynthesisPrompt += `Number of Responses: ${responses.length}\\n\\n`;\n\nsynthesisPrompt += `Quality Analysis:\\n${JSON.stringify(decision.qualityAnalysis, null, 2)}\\n\\n`;\n\nsynthesisPrompt += `Top Responses (by quality score):\\n`;\nresponses.slice(0, 3).forEach((response, index) => {\n  synthesisPrompt += `\\n${index + 1}. ${response.agentName} (Score: ${response.qualityScore}%)\\n`;\nsynthesisPrompt += `Content: ${JSON.stringify(response.content, null, 2)}\\n`;\n});\n\nif (decision.divergencePoints.length > 0) {\n  synthesisPrompt += `\\nDivergence Points:\\n${decision.divergencePoints.join('\\n')}\\n\\n`;\n}\n\nsynthesisPrompt += `Synthesis Instructions:\\n`;\nsynthesisPrompt += `1. Create a comprehensive, professional document\\n`;\nsynthesisPrompt += `2. Resolve contradictions using highest quality responses\\n`;\nsynthesisPrompt += `3. Highlight areas of strong consensus\\n`;\nsynthesisPrompt += `4. Address divergence points with balanced perspective\\n`;\nsynthesisPrompt += `5. Ensure document meets publication standards\\n`;\nsynthesisPrompt += `6. Return structured document with executive summary, main content, and appendices`;\n\nreturn {\n  synthesisPrompt,\n  decision,\n  phase: decision.phase,\n  round: decision.round,\n  responses: responses.slice(0, 3)\n};"
+      },
+      "id": "document-synthesizer",
+      "name": "Document Synthesizer",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2280, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// State management and phase transition\nconst decision = $input.first().json;\nconst currentState = $input.first().json.state;\nconst phase = decision.phase;\nconst round = decision.round;\n\n// Update state based on decision\nconst updatedState = { ...currentState };\n\n// Store consensus data\nupdatedState.consensusScores.push({\n  phase,\n  round,\n  score: decision.consensusScore,\n  timestamp: new Date().toISOString()\n});\n\n// Store refinement history if retrying\nif (decision.nextAction === 'retry') {\n  updatedState.refinementHistory.push({\n    round,\n    phase,\n    recommendations: decision.recommendations,\n    consensusScore: decision.consensusScore,\n    timestamp: new Date().toISOString()\n  });\n  updatedState.round = round + 1;\n}\n\n// Phase transition logic\nif (decision.nextAction === 'proceed') {\n  const phaseOrder = ['research', 'analysis', 'plan', 'complete'];\n  const currentIndex = phaseOrder.indexOf(phase);\n  const nextPhase = phaseOrder[currentIndex + 1] || 'complete';\n  \n  if (nextPhase === 'complete') {\n    updatedState.phase = 'complete';\n    updatedState.status = 'completed';\n    updatedState.completedAt = new Date().toISOString();\n  } else {\n    updatedState.phase = nextPhase;\n    updatedState.round = 1;\n    updatedState.refinementHistory = [];\n  }\n}\n\n// Update agent performance\nif (decision.qualityAnalysis.agentPerformance) {\n  updatedState.agentPerformance = {\n    ...updatedState.agentPerformance,\n    ...decision.qualityAnalysis.agentPerformance\n  };\n}\n\nreturn {\n  updatedState,\n  decision,\n  nextAction: decision.nextAction\n};"
+      },
+      "id": "state-manager",
+      "name": "State Manager",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2280, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final report generation with comprehensive insights\nconst state = $input.first().json.updatedState;\nconst documents = state.documents;\nconst consensusScores = state.consensusScores;\nconst refinementHistory = state.refinementHistory;\n\n// Calculate performance metrics\nconst totalPhases = 3;\nconst completedPhases = Object.values(documents).filter(doc => doc !== null).length;\nconst avgConsensus = consensusScores.length > 0 ? \n  consensusScores.reduce((sum, cs) => sum + cs.score, 0) / consensusScores.length : 0;\nconst totalRefinements = refinementHistory.length;\n\n// Generate executive summary\nconst executiveSummary = {\n  workflow_status: 'completed',\n  completion_date: state.completedAt,\n  total_phases: totalPhases,\n  completed_phases: completedPhases,\n  average_consensus: avgConsensus.toFixed(1) + '%',\n  total_refinements: totalRefinements,\n  workflow_duration: calculateDuration(state.timestamp, state.completedAt),\n  key_achievements: generateKeyAchievements(documents, consensusScores)\n};\n\n// Comprehensive final report\nconst finalReport = {\n  executive_summary,\n  detailed_findings: {\n    research: documents.research || { status: 'not_completed' },\n    analysis: documents.analysis || { status: 'not_completed' },\n    plan: documents.plan || { status: 'not_completed' }\n  },\n  performance_analysis: {\n    consensus_trends: consensusScores,\n    refinement_analysis: refinementHistory,\n    agent_performance: state.agentPerformance,\n    quality_metrics: {\n      overall_quality: avgConsensus,\n      phase_completion_rate: (completedPhases / totalPhases) * 100,\n      refinement_efficiency: totalRefinements / totalPhases\n    }\n  },\n  recommendations: generateRecommendations(documents, consensusScores),\n  metadata: {\n    workflow_id: state.workflowId,\n    generated_at: new Date().toISOString(),\n    version: '2.0',\n    total_execution_time: calculateDuration(state.timestamp, state.completedAt)\n  }\n};\n\n// Helper functions\nfunction calculateDuration(start, end) {\n  if (!start || !end) return 'unknown';\n  const duration = new Date(end) - new Date(start);\n  const minutes = Math.floor(duration / 60000);\n  const seconds = Math.floor((duration % 60000) / 1000);\n  return `${minutes}m ${seconds}s`;\n}\n\nfunction generateKeyAchievements(docs, scores) {\n  const achievements = [];\n  if (docs.research) achievements.push('Comprehensive research completed');\n  if (docs.analysis) achievements.push('Strategic analysis finalized');\n  if (docs.plan) achievements.push('Implementation plan developed');\n  if (scores.length > 0) achievements.push(`Average consensus: ${avgConsensus.toFixed(1)}%`);\n  return achievements;\n}\n\nfunction generateRecommendations(docs, scores) {\n  const recommendations = [];\n  \n  if (avgConsensus < 80) {\n    recommendations.push('Consider additional refinement rounds for future workflows');\n  }\n  \n  if (docs.research && docs.analysis && docs.plan) {\n    recommendations.push('All phases completed successfully - proceed with implementation');\n  }\n  \n  if (scores.some(s => s.score < 70)) {\n    recommendations.push('Review low-consensus phases for quality improvement');\n  }\n  \n  return recommendations;\n}\n\nreturn {\n  finalReport,\n  state,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "final-report-generator",
+      "name": "Final Report Generator",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2500, 100]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": "Bearer {{ $env.GOOGLE_DRIVE_TOKEN }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "multipart/related; boundary=boundary"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={{ generateMultipartBody($json.finalReport, $json.state.workflowId) }}"
+            }
+          ]
+        }
+      },
+      "id": "google-drive-storage",
+      "name": "Google Drive Storage",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2720, 100]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "🚀 **Multi-Agent Workflow Complete!**\\n\\n📊 **Final Report Generated**\\n📅 {{ $json.timestamp }}\\n\\n✅ **All Phases Completed Successfully**\\n\\n📈 **Performance Metrics:**\\n- Average Consensus: {{ $json.finalReport.performance_analysis.quality_metrics.overall_quality.toFixed(1) }}%\\n- Phase Completion: {{ $json.finalReport.performance_analysis.quality_metrics.phase_completion_rate.toFixed(1) }}%\\n- Total Refinements: {{ $json.finalReport.executive_summary.total_refinements }}\\n\\n📁 **Report stored in Google Drive**\\n🔗 Workflow ID: {{ $json.state.workflowId }}\\n\\n🎯 **Key Achievements:**\\n{{ $json.finalReport.executive_summary.key_achievements.join('\\n') }}\\n\\n📋 **Next Steps:**\\n{{ $json.finalReport.recommendations.join('\\n') }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        }
+      },
+      "id": "telegram-notification",
+      "name": "Telegram Notification",
+      "type": "code",
+      "typeVersion": 2,
+      "position": [2940, 100]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Enhanced State Initialization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhanced State Initialization": {
+      "main": [
+        [
+          {
+            "node": "Smart Phase Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Phase Router": {
+      "main": [
+        [
+          {
+            "node": "Dynamic Prompt Generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final Report Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dynamic Prompt Generator": {
+      "main": [
+        [
+          {
+            "node": "Agent Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Agent Executor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Executor": {
+      "main": [
+        [
+          {
+            "node": "Response Aggregator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Aggregator": {
+      "main": [
+        [
+          {
+            "node": "Committee Preparation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Committee Preparation": {
+      "main": [
+        [
+          {
+            "node": "Committee Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Committee Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Consensus Decision Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consensus Decision Engine": {
+      "main": [
+        [
+          {
+            "node": "Document Synthesizer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "State Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Synthesizer": {
+      "main": [
+        [
+          {
+            "node": "Final Report Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "State Manager": {
+      "main": [
+        [
+          {
+            "node": "Smart Phase Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Report Generator": {
+      "main": [
+        [
+          {
+            "node": "Google Drive Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Storage": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "advanced-multi-agent",
+      "name": "Advanced Multi-Agent Workflow"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "2.0"
+}
